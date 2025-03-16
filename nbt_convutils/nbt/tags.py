@@ -1,8 +1,7 @@
 import struct
 from enum import Enum
 from abc import ABC, abstractmethod
-from typing import BinaryIO, Sequence
-from typing import Any, BinaryIO, Sequence
+from typing import BinaryIO, Any, BinaryIO, Sequence
 
 TAG_END = 0
 TAG_BYTE = 1
@@ -37,17 +36,26 @@ class BinaryHandler:
         self._float = struct.Struct(f"{self._order}f")
         self._double = struct.Struct(f"{self._order}d")
 
-    def read_byte(self, buffer: BinaryIO) -> int:
-        return self._byte.unpack(buffer.read(1))[0]
+        self._ubyte = struct.Struct(f"{self._order}B")
+        self._ushort = struct.Struct(f"{self._order}H")
+        self._uint = struct.Struct(f"{self._order}I")
+        self._ulong = struct.Struct(f"{self._order}Q")
 
-    def read_short(self, buffer: BinaryIO) -> int:
-        return self._short.unpack(buffer.read(2))[0]
+    def read_byte(self, buffer: BinaryIO, signed: bool = True) -> int:
+        unpacker = self._byte if signed else self._ubyte
+        return unpacker.unpack(buffer.read(1))[0]
 
-    def read_int(self, buffer: BinaryIO) -> int:
-        return self._int.unpack(buffer.read(4))[0]
+    def read_short(self, buffer: BinaryIO, signed: bool = True) -> int:
+        unpacker = self._short if signed else self._ushort
+        return unpacker.unpack(buffer.read(2))[0]
 
-    def read_long(self, buffer: BinaryIO) -> int:
-        return self._long.unpack(buffer.read(8))[0]
+    def read_int(self, buffer: BinaryIO, signed: bool = True) -> int:
+        unpacker = self._int if signed else self._uint
+        return unpacker.unpack(buffer.read(4))[0]
+
+    def read_long(self, buffer: BinaryIO, signed: bool = True) -> int:
+        unpacker = self._long if signed else self._ulong
+        return unpacker.unpack(buffer.read(8))[0]
 
     def read_float(self, buffer: BinaryIO) -> float:
         return self._float.unpack(buffer.read(4))[0]
@@ -395,6 +403,15 @@ class TagByteArray(BaseTag):
         lenght = len(self.value)
         self.binary_handler.write_int(buffer, lenght)
         buffer.write(self.value)
+
+
+def read_nbt_file(file: BinaryIO) -> TagCompound:
+    binary_handler = BinaryHandler(ByteOrder.BIG)
+    tag_id = binary_handler.read_byte(file)
+    if tag_id != TAG_COMPOUND:
+        raise ValueError("Chunk data must starts with Compound tag.")
+    name = TagString(binary_handler, buffer=file).value
+    return TagCompound(binary_handler, buffer=file, name=name)
 
 
 TAGS_LIST = {

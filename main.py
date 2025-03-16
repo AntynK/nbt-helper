@@ -1,10 +1,11 @@
-from nbt_convutils.nbt import BinaryHandler, ByteOrder, TagCompound
+from nbt_convutils.nbt import Region
 
-binary_handler = BinaryHandler(ByteOrder.BIG)
+r = Region(r"ignore\b\r.-1.0.mca")
+print(r.chunks)
 
-with open("ignore/hotbar.nbt", "rb") as file:
-    file.read(3)  # Bedrock header 11, Java 3
-    data = TagCompound(binary_handler, buffer=file)
+# from ignore.nbt_ignore.region import Region
 
-with open("ignore/hotbar_be.nbt", "wb") as file:
-    TagCompound(binary_handler, value=[data]).write_to_buffer(file)
+# r = Region()
+# r.load_region(r"ignore\b\r.-1.0.mca")
+# print(r)
+# input()

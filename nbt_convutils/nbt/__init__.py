@@ -13,4 +13,7 @@ from .tags import (
     TagLongArray,
     TagShort,
     TagString,
+    read_nbt_file
 )
+
+from .region import Region
