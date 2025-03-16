@@ -1,5 +1,8 @@
-from nbt_convutils.nbt.loaders import BigEndianLoader
-from typing import Any, BinaryIO, Sequence, Type
+import struct
+from enum import Enum
+from abc import ABC, abstractmethod
+from typing import BinaryIO, Sequence
+from typing import Any, BinaryIO, Sequence
 
 TAG_END = 0
 TAG_BYTE = 1
@@ -16,24 +19,101 @@ TAG_INT_ARRAY = 11
 TAG_LONG_ARRAY = 12
 
 
-class BaseTag:
+class ByteOrder(Enum):
+    LITTLE = "<"
+    BIG = ">"
+
+
+class BinaryHandler:
+    def __init__(self, byte_order: ByteOrder = ByteOrder.BIG) -> None:
+        self.change_byte_order(byte_order)
+
+    def change_byte_order(self, new_order: ByteOrder):
+        self._order = new_order.value
+        self._byte = struct.Struct(f"{self._order}b")
+        self._short = struct.Struct(f"{self._order}h")
+        self._int = struct.Struct(f"{self._order}i")
+        self._long = struct.Struct(f"{self._order}q")
+        self._float = struct.Struct(f"{self._order}f")
+        self._double = struct.Struct(f"{self._order}d")
+
+    def read_byte(self, buffer: BinaryIO) -> int:
+        return self._byte.unpack(buffer.read(1))[0]
+
+    def read_short(self, buffer: BinaryIO) -> int:
+        return self._short.unpack(buffer.read(2))[0]
+
+    def read_int(self, buffer: BinaryIO) -> int:
+        return self._int.unpack(buffer.read(4))[0]
+
+    def read_long(self, buffer: BinaryIO) -> int:
+        return self._long.unpack(buffer.read(8))[0]
+
+    def read_float(self, buffer: BinaryIO) -> float:
+        return self._float.unpack(buffer.read(4))[0]
+
+    def read_double(self, buffer: BinaryIO) -> float:
+        return self._double.unpack(buffer.read(8))[0]
+
+    def read_int_array(self, buffer: BinaryIO, size: int) -> tuple[int]:
+        fmt = struct.Struct(f"{self._order}{size}i")
+        return fmt.unpack(buffer.read(fmt.size))
+
+    def read_long_array(self, buffer: BinaryIO, size: int) -> tuple[int]:
+        fmt = struct.Struct(f"{self._order}{size}q")
+        return fmt.unpack(buffer.read(fmt.size))
+
+    def write_byte(self, buffer: BinaryIO, value: int) -> None:
+        buffer.write(self._byte.pack(value))
+
+    def write_short(self, buffer: BinaryIO, value: int) -> None:
+        buffer.write(self._short.pack(value))
+
+    def write_int(self, buffer: BinaryIO, value: int) -> None:
+        buffer.write(self._int.pack(value))
+
+    def write_long(self, buffer: BinaryIO, value: int) -> None:
+        buffer.write(self._long.pack(value))
+
+    def write_float(self, buffer: BinaryIO, value: float) -> None:
+        buffer.write(self._float.pack(value))
+
+    def write_double(self, buffer: BinaryIO, value: float) -> None:
+        buffer.write(self._double.pack(value))
+
+    def write_int_array(self, buffer: BinaryIO, values: Sequence[int]) -> None:
+        size = len(values)
+        fmt = struct.Struct(f"{self._order}{size}i")
+        buffer.write(fmt.pack(*values))
+
+    def write_long_array(self, buffer: BinaryIO, values: Sequence[int]) -> None:
+        size = len(values)
+        fmt = struct.Struct(f"{self._order}{size}q")
+        buffer.write(fmt.pack(*values))
+
+
+class BaseTag(ABC):
     def __init__(
         self,
-        loader: Type[BigEndianLoader],
+        binary_handler: BinaryHandler,
         name: str = "",
         value: Any = None,
         buffer: BinaryIO | None = None,
     ) -> None:
-        self.loader = loader
+        self.binary_handler = binary_handler
         self.name = name
         self.value = value
         if buffer:
             self.load_from_buffer(buffer)
 
-    def load_from_buffer(self, buffer: BinaryIO) -> None:
-        pass
+    @abstractmethod
+    def load_from_buffer(self, buffer: BinaryIO) -> None: ...
+
+    @abstractmethod
+    def write_to_buffer(self, buffer: BinaryIO) -> None: ...
+
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}({self.name}): {self.value}"
+        return f"{self.__class__.__name__}({self.name!r}): {self.value}"
 
 
 class TagByte(BaseTag):
@@ -41,15 +121,18 @@ class TagByte(BaseTag):
 
     def __init__(
         self,
-        loader: Type[BigEndianLoader],
+        binary_handler: BinaryHandler,
         name: str = "",
         value: int = 0,
         buffer: BinaryIO | None = None,
     ) -> None:
-        super().__init__(loader, name, value, buffer)
+        super().__init__(binary_handler, name, value, buffer)
 
     def load_from_buffer(self, buffer: BinaryIO) -> None:
-        self.value = self.loader.read_byte(buffer)
+        self.value = self.binary_handler.read_byte(buffer)
+
+    def write_to_buffer(self, buffer: BinaryIO) -> None:
+        self.binary_handler.write_byte(buffer, self.value)
 
 
 class TagShort(BaseTag):
@@ -57,31 +140,37 @@ class TagShort(BaseTag):
 
     def __init__(
         self,
-        loader: Type[BigEndianLoader],
+        binary_handler: BinaryHandler,
         name: str = "",
         value: int = 0,
         buffer: BinaryIO | None = None,
     ) -> None:
-        super().__init__(loader, name, value, buffer)
+        super().__init__(binary_handler, name, value, buffer)
 
     def load_from_buffer(self, buffer: BinaryIO) -> None:
-        self.value = self.loader.read_short(buffer)
+        self.value = self.binary_handler.read_short(buffer)
+
+    def write_to_buffer(self, buffer: BinaryIO) -> None:
+        self.binary_handler.write_short(buffer, self.value)
 
 
 class TagInt(BaseTag):
-    TAD_ID = TAG_INT
+    TAG_ID = TAG_INT
 
     def __init__(
         self,
-        loader: Type[BigEndianLoader],
+        binary_handler: BinaryHandler,
         name: str = "",
         value: int = 0,
         buffer: BinaryIO | None = None,
     ) -> None:
-        super().__init__(loader, name, value, buffer)
+        super().__init__(binary_handler, name, value, buffer)
 
     def load_from_buffer(self, buffer: BinaryIO) -> None:
-        self.value = self.loader.read_int(buffer)
+        self.value = self.binary_handler.read_int(buffer)
+
+    def write_to_buffer(self, buffer: BinaryIO) -> None:
+        self.binary_handler.write_int(buffer, self.value)
 
 
 class TagLong(BaseTag):
@@ -89,15 +178,18 @@ class TagLong(BaseTag):
 
     def __init__(
         self,
-        loader: Type[BigEndianLoader],
+        binary_handler: BinaryHandler,
         name: str = "",
         value: int = 0,
         buffer: BinaryIO | None = None,
     ) -> None:
-        super().__init__(loader, name, value, buffer)
+        super().__init__(binary_handler, name, value, buffer)
 
     def load_from_buffer(self, buffer: BinaryIO) -> None:
-        self.value = self.loader.read_long(buffer)
+        self.value = self.binary_handler.read_long(buffer)
+
+    def write_to_buffer(self, buffer: BinaryIO) -> None:
+        self.binary_handler.write_long(buffer, self.value)
 
 
 class TagFloat(BaseTag):
@@ -105,31 +197,37 @@ class TagFloat(BaseTag):
 
     def __init__(
         self,
-        loader: Type[BigEndianLoader],
+        binary_handler: BinaryHandler,
         name: str = "",
         value: float = 0,
         buffer: BinaryIO | None = None,
     ) -> None:
-        super().__init__(loader, name, value, buffer)
+        super().__init__(binary_handler, name, value, buffer)
 
     def load_from_buffer(self, buffer: BinaryIO) -> None:
-        self.value = self.loader.read_float(buffer)
+        self.value = self.binary_handler.read_float(buffer)
+
+    def write_to_buffer(self, buffer: BinaryIO) -> None:
+        self.binary_handler.write_float(buffer, self.value)
 
 
 class TagDouble(BaseTag):
-    TAD_ID = TAG_DOUBLE
+    TAG_ID = TAG_DOUBLE
 
     def __init__(
         self,
-        loader: Type[BigEndianLoader],
+        binary_handler: BinaryHandler,
         name: str = "",
         value: float = 0,
         buffer: BinaryIO | None = None,
     ) -> None:
-        super().__init__(loader, name, value, buffer)
+        super().__init__(binary_handler, name, value, buffer)
 
     def load_from_buffer(self, buffer: BinaryIO) -> None:
-        self.value = self.loader.read_double(buffer)
+        self.value = self.binary_handler.read_double(buffer)
+
+    def write_to_buffer(self, buffer: BinaryIO) -> None:
+        self.binary_handler.write_double(buffer, self.value)
 
 
 class TagString(BaseTag):
@@ -137,19 +235,24 @@ class TagString(BaseTag):
 
     def __init__(
         self,
-        loader: Type[BigEndianLoader],
+        binary_handler: BinaryHandler,
         name: str = "",
         value: str = "",
         buffer: BinaryIO | None = None,
     ) -> None:
-        super().__init__(loader, name, value, buffer)
+        super().__init__(binary_handler, name, value, buffer)
 
     def load_from_buffer(self, buffer: BinaryIO) -> None:
-        length = self.loader.read_short(buffer)
+        length = self.binary_handler.read_short(buffer)
         data = buffer.read(length)
         if len(data) != length:
             raise ValueError(f"String length not equal: {length=}, {data=}.")
         self.value = data.decode("utf-8")
+
+    def write_to_buffer(self, buffer: BinaryIO) -> None:
+        data = self.value.encode("utf-8")
+        self.binary_handler.write_short(buffer, len(data))
+        buffer.write(data)
 
 
 class TagList(BaseTag):
@@ -157,23 +260,35 @@ class TagList(BaseTag):
 
     def __init__(
         self,
-        loader: Type[BigEndianLoader],
+        binary_handler: BinaryHandler,
         name: str = "",
         value: Sequence | None = None,
         buffer: BinaryIO | None = None,
         tag_id: int = TAG_END,
     ) -> None:
-        super().__init__(loader, name, [], buffer)
         self.tag_id = tag_id
+        super().__init__(binary_handler, name, [], buffer)
+
         if value:
             self.value.extend(value)
 
     def load_from_buffer(self, buffer: BinaryIO) -> None:
-        self.tag_id = self.loader.read_byte(buffer)
-        length = self.loader.read_int(buffer)
+        self.tag_id = self.binary_handler.read_byte(buffer)
+        length = self.binary_handler.read_int(buffer)
         self.value = [
-            TAGS_LIST[self.tag_id](self.loader, buffer=buffer) for _ in range(length)
+            TAGS_LIST[self.tag_id](self.binary_handler, buffer=buffer)
+            for _ in range(length)
         ]
+
+    def write_to_buffer(self, buffer: BinaryIO) -> None:
+        self.binary_handler.write_byte(buffer, self.tag_id)
+        self.binary_handler.write_int(buffer, len(self.value))
+
+        for tag in self.value:
+            tag.write_to_buffer(buffer)
+
+    def __repr__(self) -> str:
+        return f"TagList('{self.name}') [{len(self.value)}]"
 
 
 class TagCompound(BaseTag):
@@ -181,23 +296,35 @@ class TagCompound(BaseTag):
 
     def __init__(
         self,
-        loader: Type[BigEndianLoader],
+        binary_handler: BinaryHandler,
         name: str = "",
         value: Sequence | None = None,
         buffer: BinaryIO | None = None,
     ) -> None:
-        super().__init__(loader, name, [], buffer)
+        super().__init__(binary_handler, name, [], buffer)
         if value:
             self.value.extend(value)
 
     def load_from_buffer(self, buffer: BinaryIO) -> None:
         while True:
-            tag_type = self.loader.read_byte(buffer)
+            tag_type = self.binary_handler.read_byte(buffer)
             if tag_type == TAG_END:
                 break
-            name = TagString(self.loader, buffer=buffer).value
-            tag = TAGS_LIST[tag_type](self.loader, name=name, buffer=buffer)
+            name = TagString(self.binary_handler, buffer=buffer).value
+            tag = TAGS_LIST[tag_type](self.binary_handler, name=name, buffer=buffer)
             self.value.append(tag)
+
+    def write_to_buffer(self, buffer: BinaryIO) -> None:
+        for tag in self.value:
+            self.binary_handler.write_byte(buffer, tag.TAG_ID)
+            TagString(
+                self.binary_handler,
+                value=tag.name,
+            ).write_to_buffer(buffer)
+
+            tag.write_to_buffer(buffer)
+
+        self.binary_handler.write_byte(buffer, TAG_END)
 
 
 class TagIntArray(BaseTag):
@@ -205,18 +332,23 @@ class TagIntArray(BaseTag):
 
     def __init__(
         self,
-        loader: Type[BigEndianLoader],
+        binary_handler: BinaryHandler,
         name: str = "",
         value: Sequence | None = None,
         buffer: BinaryIO | None = None,
     ) -> None:
-        super().__init__(loader, name, [], buffer)
+        super().__init__(binary_handler, name, [], buffer)
         if value:
             self.value.extend(value)
 
     def load_from_buffer(self, buffer: BinaryIO) -> None:
-        length = self.loader.read_int(buffer)
-        self.value = list(self.loader.read_int_array(buffer, length))
+        length = self.binary_handler.read_int(buffer)
+        self.value = list(self.binary_handler.read_int_array(buffer, length))
+
+    def write_to_buffer(self, buffer: BinaryIO):
+        lenght = len(self.value)
+        self.binary_handler.write_int(buffer, lenght)
+        self.binary_handler.write_int_array(buffer, self.value)
 
 
 class TagLongArray(BaseTag):
@@ -224,18 +356,23 @@ class TagLongArray(BaseTag):
 
     def __init__(
         self,
-        loader: Type[BigEndianLoader],
+        binary_handler: BinaryHandler,
         name: str = "",
         value: Sequence | None = None,
         buffer: BinaryIO | None = None,
     ) -> None:
-        super().__init__(loader, name, [], buffer)
+        super().__init__(binary_handler, name, [], buffer)
         if value:
             self.value.extend(value)
 
     def load_from_buffer(self, buffer: BinaryIO) -> None:
-        length = self.loader.read_int(buffer)
-        self.value = list(self.loader.read_long_array(buffer, length))
+        length = self.binary_handler.read_int(buffer)
+        self.value = list(self.binary_handler.read_long_array(buffer, length))
+
+    def write_to_buffer(self, buffer: BinaryIO):
+        lenght = len(self.value)
+        self.binary_handler.write_int(buffer, lenght)
+        self.binary_handler.write_long_array(buffer, self.value)
 
 
 class TagByteArray(BaseTag):
@@ -243,16 +380,21 @@ class TagByteArray(BaseTag):
 
     def __init__(
         self,
-        loader: Type[BigEndianLoader],
+        binary_handler: BinaryHandler,
         name: str = "",
         value: bytearray | None = None,
         buffer: BinaryIO | None = None,
     ) -> None:
-        super().__init__(loader, name, value or bytearray(), buffer)
+        super().__init__(binary_handler, name, value or bytearray(), buffer)
 
     def load_from_buffer(self, buffer: BinaryIO) -> None:
-        length = self.loader.read_int(buffer)
+        length = self.binary_handler.read_int(buffer)
         self.value = bytearray(buffer.read(length))
+
+    def write_to_buffer(self, buffer: BinaryIO):
+        lenght = len(self.value)
+        self.binary_handler.write_int(buffer, lenght)
+        buffer.write(self.value)
 
 
 TAGS_LIST = {
