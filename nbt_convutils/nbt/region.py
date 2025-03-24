@@ -3,9 +3,9 @@ import gzip
 import zlib
 from enum import Enum
 from io import BytesIO
-from typing import Optional, Union, BinaryIO
+from typing import Optional, BinaryIO
 
-from nbt_convutils.nbt.tags import BinaryHandler, ByteOrder, TagCompound, read_nbt_file
+from nbt_convutils.nbt.tags import BinaryHandler, ByteOrder, TagCompound, read_nbt_file,write_nbt_file
 
 SECTOR_SIZE = 4096
 INT_SIZE = 4
@@ -36,25 +36,120 @@ def location_from_cords(x: int, z: int) -> int:
 class Chunk:
     def __init__(
         self,
-        x: int,
-        z: int,
-        compression: int,
-        data: TagCompound,
-        timestamp: int,
+        x: int = 0,
+        z: int = 0,
+        timestamp: int = 0,
+        compression: int = 0,
+        data: None | TagCompound = None,
     ) -> None:
+        self._binary_handler = BinaryHandler(ByteOrder.BIG)
         self.x, self.z = x, z
-        self.data = data
-        self.timestamp = timestamp
         self.compression = compression
+        self.timestamp = timestamp
+
+        if data is None:
+            data = TagCompound(self._binary_handler)
+        self.data = data
+        self.data.binary_handler = self._binary_handler
+
+    def read_chunk(self, index: int, buffer: BinaryIO) -> None:
+        self.x, self.z = cords_from_location(index)
+        self._seek_to_location_table(buffer)
+        location = self._binary_handler.read_int(buffer, signed=False)
+        if location == 0:
+            return
+
+        offset = location >> 8
+
+        buffer.seek(offset * SECTOR_SIZE)
+        self._read_body(buffer)
+
+        self._seek_to_timestamp_table(buffer)
+        self.timestamp = self._binary_handler.read_int(buffer, signed=False)
+
+    def _read_body(self, buffer: BinaryIO) -> None:
+        length = self._binary_handler.read_int(buffer, signed=False)
+        self.compression = self._binary_handler.read_byte(buffer, signed=False)
+        chunk_data = self._decompress_chunk(buffer.read(length))
+        self.data = read_nbt_file(chunk_data)
+
+    def write_chunk(self, buffer: BinaryIO, offset: int) -> int:
+        chunk_data_pos = offset * SECTOR_SIZE
+        buffer.seek(chunk_data_pos)
+        self._write_body(buffer)
+        length = buffer.tell() - chunk_data_pos
+        occupied_sectors = length // SECTOR_SIZE + 1
+        self._add_padding(buffer, length, occupied_sectors)
+
+        location = (offset << 8) | (occupied_sectors & 0b11111111)
+
+        self._seek_to_location_table(buffer)
+        self._binary_handler.write_int(buffer, location, signed=False)
+
+        self._seek_to_timestamp_table(buffer)
+        self._binary_handler.write_int(buffer, self.timestamp, signed=False)
+        return occupied_sectors
+
+    def _seek_to_location_table(self, buffer: BinaryIO):
+        index = location_from_cords(self.x, self.z)
+        buffer.seek(index * INT_SIZE)
+
+    def _seek_to_timestamp_table(self, buffer: BinaryIO):
+        index = location_from_cords(self.x, self.z)
+        buffer.seek(index * INT_SIZE + SECTOR_SIZE)
+
+    def _add_padding(
+        self, buffer: BinaryIO, length: int, occupied_sectors: int
+    ) -> None:
+        padding = abs(length - SECTOR_SIZE * occupied_sectors) - 1
+        buffer.seek(padding, os.SEEK_CUR)
+        buffer.write(b"\x00")
+
+    def _write_body(self, buffer: BinaryIO) -> None:
+        temp_buffer = BytesIO()
+        write_nbt_file(self.data, temp_buffer)
+        chunk_data = self._compress_chunk(temp_buffer.getvalue())
+
+        self._binary_handler.write_int(buffer, len(chunk_data), signed=False)
+        self._binary_handler.write_byte(buffer, self.compression, signed=False)
+        buffer.write(chunk_data)
+
+    def _decompress_chunk(self, chunk_data: bytes) -> BytesIO:
+        if self.compression not in CompressionTypes:
+            raise ValueError(f"Undefined compression type {self.compression}")
+
+        compression_type = CompressionTypes(self.compression)
+        if compression_type == CompressionTypes.GZIP_COMPRESSED:
+            data = gzip.decompress(chunk_data)
+        elif compression_type == CompressionTypes.ZLIB_COMPRESSED:
+            data = zlib.decompress(chunk_data)
+        elif compression_type == CompressionTypes.UNCOMPRESSED:
+            data = chunk_data
+
+        return BytesIO(data)  # type: ignore
+
+    def _compress_chunk(self, chunk_data: bytes) -> bytes:
+        if self.compression not in CompressionTypes:
+            raise ValueError(f"Undefined compression type {self.compression}")
+
+        compression_type = CompressionTypes(self.compression)
+        if compression_type == CompressionTypes.GZIP_COMPRESSED:
+            data = gzip.compress(chunk_data)
+        elif compression_type == CompressionTypes.ZLIB_COMPRESSED:
+            data = zlib.compress(chunk_data)
+        elif compression_type == CompressionTypes.UNCOMPRESSED:
+            data = chunk_data
+        return data  # type: ignore
 
     def __repr__(self) -> str:
         return f"Chunk(x={self.x}, z={self.z}, compression={self.compression}, timestamp={self.timestamp}, data={self.data})"
 
 
 class Region:
-    def __init__(self, filepath: Optional[str] = None) -> None:
+    def __init__(self, x: int = 0, z: int = 0, filepath: Optional[str] = None) -> None:
         self._binary_handler = BinaryHandler(ByteOrder.BIG)
         self.chunks: list[Chunk] = []
+        self.x, self.z = x, z
         if filepath:
             self.load_region_file(filepath)
 
@@ -70,42 +165,21 @@ class Region:
 
         with open(filepath, "rb") as file:
             for index in range(SECTOR_SIZE // INT_SIZE):
-                chunk = self._load_chunk(index, file)
-                if chunk:
-                    self.chunks.append(chunk)
+                chunk = Chunk()
+                chunk.read_chunk(index, file)
+                self.chunks.append(chunk)
 
-    def _load_chunk(self, index: int, file: BinaryIO) -> Chunk | None:
-        x, z = cords_from_location(index)
-        file.seek(index * INT_SIZE)
-        location = self._binary_handler.read_int(file, signed=False)
-        if location == 0:
-            return
+    def write_region_file(self, output_folder: str) -> None:
+        filepath = os.path.join(output_folder, f"r.{self.x}.{self.z}.mca")
+        with open(filepath, "wb") as file:
+            self._init_tables(file)
+            offset = 100
+            for chunk in self.chunks:
+                offset += chunk.write_chunk(file, offset)
 
-        offset = location >> 8
-
-        file.seek(offset * SECTOR_SIZE)
-        length = self._binary_handler.read_int(file, signed=False)
-        compression = self._binary_handler.read_byte(file, signed=False)
-        chunk_data = self._decompress_chunk(file.read(length), compression)
-        data = read_nbt_file(chunk_data)
-
-        file.seek(index * INT_SIZE + SECTOR_SIZE)
-        timestamp = self._binary_handler.read_int(file, signed=False)
-        return Chunk(x, z, compression, data, timestamp)
-
-    def _decompress_chunk(self, chunk_data: bytes, compression: int) -> BytesIO:
-        if compression not in CompressionTypes:
-            raise ValueError(f"Undefined compression type {compression}")
-
-        compression_type = CompressionTypes(compression)
-        if compression_type == CompressionTypes.GZIP_COMPRESSED:
-            data = gzip.decompress(chunk_data)
-        elif compression_type == CompressionTypes.ZLIB_COMPRESSED:
-            data = zlib.decompress(chunk_data)
-        elif compression_type == CompressionTypes.UNCOMPRESSED:
-            data = chunk_data
-
-        return BytesIO(data)  # type: ignore
+    def _init_tables(self, buffer: BinaryIO) -> None:
+        buffer.seek(SECTOR_SIZE * 2 - 1)
+        buffer.write(b"\x00")
 
     def __repr__(self) -> str:
         return f"Region(x={self.x}, z={self.z}): [{len(self.chunks)} chunks]"

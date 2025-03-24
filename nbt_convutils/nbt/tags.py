@@ -71,17 +71,21 @@ class BinaryHandler:
         fmt = struct.Struct(f"{self._order}{size}q")
         return fmt.unpack(buffer.read(fmt.size))
 
-    def write_byte(self, buffer: BinaryIO, value: int) -> None:
-        buffer.write(self._byte.pack(value))
+    def write_byte(self, buffer: BinaryIO, value: int, signed: bool = True) -> None:
+        packer = self._byte if signed else self._ubyte
+        buffer.write(packer.pack(value))
 
-    def write_short(self, buffer: BinaryIO, value: int) -> None:
-        buffer.write(self._short.pack(value))
+    def write_short(self, buffer: BinaryIO, value: int, signed: bool = True) -> None:
+        packer = self._short if signed else self._ushort
+        buffer.write(packer.pack(value))
 
-    def write_int(self, buffer: BinaryIO, value: int) -> None:
-        buffer.write(self._int.pack(value))
+    def write_int(self, buffer: BinaryIO, value: int, signed: bool = True) -> None:
+        packer = self._int if signed else self._uint
+        buffer.write(packer.pack(value))
 
-    def write_long(self, buffer: BinaryIO, value: int) -> None:
-        buffer.write(self._long.pack(value))
+    def write_long(self, buffer: BinaryIO, value: int, signed: bool = True) -> None:
+        packer = self._long if signed else self._ulong
+        buffer.write(packer.pack(value))
 
     def write_float(self, buffer: BinaryIO, value: float) -> None:
         buffer.write(self._float.pack(value))
@@ -412,6 +416,11 @@ def read_nbt_file(file: BinaryIO) -> TagCompound:
         raise ValueError("File data must starts with Compound tag.")
     name = TagString(binary_handler, buffer=file).value
     return TagCompound(binary_handler, buffer=file, name=name)
+
+
+def write_nbt_file(data: TagCompound, buffer: BinaryIO) -> None:
+    binary_handler = BinaryHandler(ByteOrder.BIG)
+    TagCompound(binary_handler, value=[data]).write_to_buffer(buffer)
 
 
 TAGS_LIST = {
