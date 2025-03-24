@@ -409,7 +409,7 @@ def read_nbt_file(file: BinaryIO) -> TagCompound:
     binary_handler = BinaryHandler(ByteOrder.BIG)
     tag_id = binary_handler.read_byte(file)
     if tag_id != TAG_COMPOUND:
-        raise ValueError("Chunk data must starts with Compound tag.")
+        raise ValueError("File data must starts with Compound tag.")
     name = TagString(binary_handler, buffer=file).value
     return TagCompound(binary_handler, buffer=file, name=name)
 
