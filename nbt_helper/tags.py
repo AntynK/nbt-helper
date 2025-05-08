@@ -1,7 +1,27 @@
+__all__ = [
+    "ByteOrder",
+    "BinaryHandler",
+    "BaseTag",
+    "TagByte",
+    "TagShort",
+    "TagInt",
+    "TagLong",
+    "TagFloat",
+    "TagDouble",
+    "TagList",
+    "TagCompound",
+    "TagIntArray",
+    "TagLongArray",
+    "TagByteArray",
+    "read_nbt_file",
+    "write_nbt_file",
+]
+
+
 import struct
 from enum import Enum
 from abc import ABC, abstractmethod
-from typing import BinaryIO, Any, BinaryIO, Sequence
+from typing import BinaryIO, Any, BinaryIO, Sequence, Optional, TypeVar
 
 TAG_END = 0
 TAG_BYTE = 1
@@ -16,6 +36,8 @@ TAG_LIST = 9
 TAG_COMPOUND = 10
 TAG_INT_ARRAY = 11
 TAG_LONG_ARRAY = 12
+
+V = TypeVar("V", bound="Any")
 
 
 class ByteOrder(Enum):
@@ -110,7 +132,7 @@ class BaseTag(ABC):
         binary_handler: BinaryHandler,
         name: str = "",
         value: Any = None,
-        buffer: BinaryIO | None = None,
+        buffer: Optional[BinaryIO] = None,
     ) -> None:
         self.binary_handler = binary_handler
         self.name = name
@@ -136,7 +158,7 @@ class TagByte(BaseTag):
         binary_handler: BinaryHandler,
         name: str = "",
         value: int = 0,
-        buffer: BinaryIO | None = None,
+        buffer: Optional[BinaryIO] = None,
     ) -> None:
         super().__init__(binary_handler, name, value, buffer)
 
@@ -155,7 +177,7 @@ class TagShort(BaseTag):
         binary_handler: BinaryHandler,
         name: str = "",
         value: int = 0,
-        buffer: BinaryIO | None = None,
+        buffer: Optional[BinaryIO] = None,
     ) -> None:
         super().__init__(binary_handler, name, value, buffer)
 
@@ -174,7 +196,7 @@ class TagInt(BaseTag):
         binary_handler: BinaryHandler,
         name: str = "",
         value: int = 0,
-        buffer: BinaryIO | None = None,
+        buffer: Optional[BinaryIO] = None,
     ) -> None:
         super().__init__(binary_handler, name, value, buffer)
 
@@ -193,7 +215,7 @@ class TagLong(BaseTag):
         binary_handler: BinaryHandler,
         name: str = "",
         value: int = 0,
-        buffer: BinaryIO | None = None,
+        buffer: Optional[BinaryIO] = None,
     ) -> None:
         super().__init__(binary_handler, name, value, buffer)
 
@@ -212,7 +234,7 @@ class TagFloat(BaseTag):
         binary_handler: BinaryHandler,
         name: str = "",
         value: float = 0,
-        buffer: BinaryIO | None = None,
+        buffer: Optional[BinaryIO] = None,
     ) -> None:
         super().__init__(binary_handler, name, value, buffer)
 
@@ -231,7 +253,7 @@ class TagDouble(BaseTag):
         binary_handler: BinaryHandler,
         name: str = "",
         value: float = 0,
-        buffer: BinaryIO | None = None,
+        buffer: Optional[BinaryIO] = None,
     ) -> None:
         super().__init__(binary_handler, name, value, buffer)
 
@@ -250,7 +272,7 @@ class TagString(BaseTag):
         binary_handler: BinaryHandler,
         name: str = "",
         value: str = "",
-        buffer: BinaryIO | None = None,
+        buffer: Optional[BinaryIO] = None,
     ) -> None:
         super().__init__(binary_handler, name, value, buffer)
 
@@ -274,8 +296,8 @@ class TagList(BaseTag):
         self,
         binary_handler: BinaryHandler,
         name: str = "",
-        value: Sequence | None = None,
-        buffer: BinaryIO | None = None,
+        value: Optional[Sequence] = None,
+        buffer: Optional[BinaryIO] = None,
         tag_id: int = TAG_END,
     ) -> None:
         self.tag_id = tag_id
@@ -302,6 +324,25 @@ class TagList(BaseTag):
     def __repr__(self) -> str:
         return f"TagList('{self.name}') [{len(self.value)}]"
 
+    def __iter__(self):
+        yield from self.value
+
+    def __getitem__(self, index: int) -> Any:
+        if not isinstance(index, int):
+            raise ValueError("Index must be an integer.")
+
+        return self.value[index]
+
+    def __setitem__(self, index: int, item: Any):
+        if not isinstance(index, int):
+            raise ValueError("Index must be a string.")
+        if not issubclass(type(item), BaseTag):
+            raise ValueError("Value must be a subclass of BaseTag.")
+        self.value[index] = item
+
+    def __len__(self) -> int:
+        return len(self.value)
+
 
 class TagCompound(BaseTag):
     TAG_ID = TAG_COMPOUND
@@ -310,8 +351,8 @@ class TagCompound(BaseTag):
         self,
         binary_handler: BinaryHandler,
         name: str = "",
-        value: Sequence | None = None,
-        buffer: BinaryIO | None = None,
+        value: Optional[Sequence] = None,
+        buffer: Optional[BinaryIO] = None,
     ) -> None:
         super().__init__(binary_handler, name, [], buffer)
         if value:
@@ -338,6 +379,63 @@ class TagCompound(BaseTag):
 
         self.binary_handler.write_byte(buffer, TAG_END)
 
+    def get_tag(self, key: str, default: Optional[V] = None) -> Optional[V]:
+        if not isinstance(key, str):
+            raise ValueError("Key must be a string.")
+        result = default
+        if key in self:
+            result = self[key]
+        return result
+
+    def get_value(self, key: str, default: Optional[V] = None) -> Optional[V]:
+        if not isinstance(key, str):
+            raise ValueError("Key must be a string.")
+        result = default
+        if key in self:
+            result = self[key].value
+        return result
+
+    def pop(self, key: str) -> Any:
+        if not isinstance(key, str):
+            raise ValueError("Key must be a string.")
+        result = self.get_value(key)
+        del self[key]
+
+        return result
+
+    def __delitem__(self, key: str) -> None:
+        if not isinstance(key, str):
+            raise ValueError("Key must be a string.")
+        res = [tag for tag in self.value if tag.name != key]
+        self.value = res
+
+    def __iter__(self):
+        yield from self.value
+
+    def __getitem__(self, key: str) -> Any:
+        if not isinstance(key, str):
+            raise ValueError("Key must be a string.")
+        for tag in self.value:
+            if tag.name == key:
+                return tag
+        raise KeyError(f"'{key}' does not exist.")
+
+    def __setitem__(self, key: str, item: Any):
+        if not isinstance(key, str):
+            raise ValueError("Key must be a string.")
+        if not issubclass(type(item), BaseTag):
+            raise ValueError("Value must be a subclass of BaseTag.")
+        item.name = key
+        self.value.append(item)
+
+    def __contains__(self, key: str) -> bool:
+        if not isinstance(key, str):
+            raise ValueError("Key must be a string.")
+        return any(key == tag.name for tag in self.value)
+
+    def __len__(self) -> int:
+        return len(self.value)
+
 
 class TagIntArray(BaseTag):
     TAG_ID = TAG_INT_ARRAY
@@ -346,8 +444,8 @@ class TagIntArray(BaseTag):
         self,
         binary_handler: BinaryHandler,
         name: str = "",
-        value: Sequence | None = None,
-        buffer: BinaryIO | None = None,
+        value: Optional[Sequence] = None,
+        buffer: Optional[BinaryIO] = None,
     ) -> None:
         super().__init__(binary_handler, name, [], buffer)
         if value:
@@ -370,8 +468,8 @@ class TagLongArray(BaseTag):
         self,
         binary_handler: BinaryHandler,
         name: str = "",
-        value: Sequence | None = None,
-        buffer: BinaryIO | None = None,
+        value: Optional[Sequence] = None,
+        buffer: Optional[BinaryIO] = None,
     ) -> None:
         super().__init__(binary_handler, name, [], buffer)
         if value:
@@ -394,8 +492,8 @@ class TagByteArray(BaseTag):
         self,
         binary_handler: BinaryHandler,
         name: str = "",
-        value: bytearray | None = None,
-        buffer: BinaryIO | None = None,
+        value: Optional[bytearray] = None,
+        buffer: Optional[BinaryIO] = None,
     ) -> None:
         super().__init__(binary_handler, name, value or bytearray(), buffer)
 

@@ -1,3 +1,13 @@
+__all__ = [
+    "SECTOR_SIZE",
+    "Region",
+    "Chunk",
+    "CompressionTypes",
+    "cords_from_filepath",
+    "cords_from_location",
+    "location_from_cords",
+]
+
 import os
 import gzip
 import zlib
@@ -5,7 +15,13 @@ from enum import Enum
 from io import BytesIO
 from typing import Optional, BinaryIO
 
-from nbt_convutils.nbt.tags import BinaryHandler, ByteOrder, TagCompound, read_nbt_file,write_nbt_file
+from nbt_helper.tags import (
+    BinaryHandler,
+    ByteOrder,
+    TagCompound,
+    read_nbt_file,
+    write_nbt_file,
+)
 
 SECTOR_SIZE = 4096
 INT_SIZE = 4
@@ -40,7 +56,7 @@ class Chunk:
         z: int = 0,
         timestamp: int = 0,
         compression: int = 0,
-        data: None | TagCompound = None,
+        data: Optional[TagCompound] = None,
     ) -> None:
         self._binary_handler = BinaryHandler(ByteOrder.BIG)
         self.x, self.z = x, z
@@ -115,10 +131,11 @@ class Chunk:
         buffer.write(chunk_data)
 
     def _decompress_chunk(self, chunk_data: bytes) -> BytesIO:
-        if self.compression not in CompressionTypes:
+        try:
+            compression_type = CompressionTypes(self.compression)
+        except ValueError:
             raise ValueError(f"Undefined compression type {self.compression}")
 
-        compression_type = CompressionTypes(self.compression)
         if compression_type == CompressionTypes.GZIP_COMPRESSED:
             data = gzip.decompress(chunk_data)
         elif compression_type == CompressionTypes.ZLIB_COMPRESSED:
@@ -129,7 +146,9 @@ class Chunk:
         return BytesIO(data)  # type: ignore
 
     def _compress_chunk(self, chunk_data: bytes) -> bytes:
-        if self.compression not in CompressionTypes:
+        try:
+            compression_type = CompressionTypes(self.compression)
+        except ValueError:
             raise ValueError(f"Undefined compression type {self.compression}")
 
         compression_type = CompressionTypes(self.compression)
