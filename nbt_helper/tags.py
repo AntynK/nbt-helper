@@ -8,6 +8,7 @@ __all__ = [
     "TagLong",
     "TagFloat",
     "TagDouble",
+    "TagString",
     "TagList",
     "TagCompound",
     "TagIntArray",
@@ -62,6 +63,9 @@ class BinaryHandler:
         self._ushort = struct.Struct(f"{self._order}H")
         self._uint = struct.Struct(f"{self._order}I")
         self._ulong = struct.Struct(f"{self._order}Q")
+
+    def get_byte_order(self) -> ByteOrder:
+        return ByteOrder(self._order)
 
     def read_byte(self, buffer: BinaryIO, signed: bool = True) -> int:
         unpacker = self._byte if signed else self._ubyte
