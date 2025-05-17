@@ -1,18 +1,13 @@
 [build-system]
-requires = ["setuptools >= 77.0.3"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling >= 1.26"]
+build-backend = "hatchling.build"
 
-[tool.setuptools]
-py-modules = []
+[tool.hatch.build]
 packages = ["nbt_helper"]
-
-[tool.setuptools.dynamic]
-version = {attr = "nbt_helper.__version__"}
-readme = {file = ["README.md"]}
 
 [project]
 name = "nbt-helper"
-dynamic = ["version"]
+version = "0.4.0"
 requires-python = ">= 3.9"
 authors = [
   {name = "Andrii Karandashov"}
@@ -35,3 +30,6 @@ Documentation = "https://github.com/AntynK/nbt-helper/blob/master/docs"
 Repository = "https://github.com/AntynK/nbt-helper.git"
 Issues = "https://github.com/AntynK/nbt-helper/issues"
 Changelog = "https://github.com/AntynK/nbt-helper/blob/master/CHANGELOG.md"
+
+[project.optional-dependencies]
+test = ["pytest>=7.0"]

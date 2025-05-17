@@ -18,6 +18,7 @@ from typing import BinaryIO, Optional
 from enum import Enum
 
 from nbt_helper.tags import (
+    BaseTag,
     BinaryHandler,
     ByteOrder,
     TagCompound,
@@ -60,9 +61,9 @@ class Uncompressed(DataHandler):
         return TagCompound(binary_handler, buffer=buffer, name=name)
 
     @staticmethod
-    def save(data: TagCompound, buffer: BinaryIO, byte_order: ByteOrder) -> None:
+    def save(data: BaseTag, buffer: BinaryIO, byte_order: ByteOrder) -> None:
         binary_handler = BinaryHandler(byte_order)
-        TagCompound(binary_handler, value=[data]).write_to_buffer(buffer)
+        TagCompound(binary_handler, value=[TagCompound(binary_handler, value=[data])]).write_to_buffer(buffer)
 
 
 class JE_Uncompressed(DataHandler):
@@ -71,7 +72,7 @@ class JE_Uncompressed(DataHandler):
         return Uncompressed.load(buffer, ByteOrder.BIG)
 
     @staticmethod
-    def save(data: TagCompound, buffer: BinaryIO) -> None:
+    def save(data: BaseTag, buffer: BinaryIO) -> None:
         if data.binary_handler.get_byte_order() is ByteOrder.LITTLE:
             data.binary_handler.change_byte_order(ByteOrder.BIG)
         Uncompressed.save(data, buffer, ByteOrder.BIG)
@@ -83,7 +84,7 @@ class BE_Uncompressed(DataHandler):
         return Uncompressed.load(buffer, ByteOrder.LITTLE)
 
     @staticmethod
-    def save(data: TagCompound, buffer: BinaryIO) -> None:
+    def save(data: BaseTag, buffer: BinaryIO) -> None:
         if data.binary_handler.get_byte_order() is ByteOrder.BIG:
             data.binary_handler.change_byte_order(ByteOrder.LITTLE)
         Uncompressed.save(data, buffer, ByteOrder.LITTLE)
@@ -96,7 +97,7 @@ class JE_ZlibCompressed(DataHandler):
         return JE_Uncompressed.load(buffer)
 
     @staticmethod
-    def save(data: TagCompound, buffer: BinaryIO) -> None:
+    def save(data: BaseTag, buffer: BinaryIO) -> None:
         temp_buffer = BytesIO()
         JE_Uncompressed.save(data, temp_buffer)
         buffer.write(zlib.compress(temp_buffer.getvalue()))
@@ -109,7 +110,7 @@ class JE_GzipCompressed(DataHandler):
         return JE_Uncompressed.load(buffer)
 
     @staticmethod
-    def save(data: TagCompound, buffer: BinaryIO) -> None:
+    def save(data: BaseTag, buffer: BinaryIO) -> None:
         temp_buffer = BytesIO()
         JE_Uncompressed.save(data, temp_buffer)
         buffer.write(gzip.compress(temp_buffer.getvalue()))
@@ -127,7 +128,7 @@ class BE_WithHeader(DataHandler):
         return BE_Uncompressed.load(buffer)
 
     @staticmethod
-    def save(data: TagCompound, buffer: BinaryIO) -> None:
+    def save(data: BaseTag, buffer: BinaryIO) -> None:
         binary_handler = BinaryHandler(ByteOrder.LITTLE)
         binary_handler.write_int(buffer, BEDROCK_EDITION_MAGIC_NUMBER)
         temp_buffer = BytesIO()
