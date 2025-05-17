@@ -15,12 +15,11 @@ from enum import Enum
 from io import BytesIO
 from typing import Optional, BinaryIO
 
+from nbt_helper.file import JE_Uncompressed
 from nbt_helper.tags import (
     BinaryHandler,
     ByteOrder,
     TagCompound,
-    read_nbt_file,
-    write_nbt_file,
 )
 
 SECTOR_SIZE = 4096
@@ -87,7 +86,7 @@ class Chunk:
         length = self._binary_handler.read_int(buffer, signed=False)
         self.compression = self._binary_handler.read_byte(buffer, signed=False)
         chunk_data = self._decompress_chunk(buffer.read(length))
-        self.data = read_nbt_file(chunk_data)
+        self.data = JE_Uncompressed.read(chunk_data)
 
     def write_chunk(self, buffer: BinaryIO, offset: int) -> int:
         chunk_data_pos = offset * SECTOR_SIZE
@@ -123,7 +122,7 @@ class Chunk:
 
     def _write_body(self, buffer: BinaryIO) -> None:
         temp_buffer = BytesIO()
-        write_nbt_file(self.data, temp_buffer)
+        JE_Uncompressed.write(self.data, temp_buffer)
         chunk_data = self._compress_chunk(temp_buffer.getvalue())
 
         self._binary_handler.write_int(buffer, len(chunk_data), signed=False)
@@ -163,6 +162,9 @@ class Chunk:
     def __repr__(self) -> str:
         return f"Chunk(x={self.x}, z={self.z}, compression={self.compression}, timestamp={self.timestamp}, data={self.data})"
 
+    def is_empty(self) -> bool:
+        return not self.data.value
+
 
 class Region:
     def __init__(self, x: int = 0, z: int = 0, filepath: Optional[str] = None) -> None:
@@ -194,6 +196,8 @@ class Region:
             self._init_tables(file)
             offset = 100
             for chunk in self.chunks:
+                if chunk.is_empty():
+                    continue
                 offset += chunk.write_chunk(file, offset)
 
     def _init_tables(self, buffer: BinaryIO) -> None:

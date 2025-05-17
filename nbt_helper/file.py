@@ -18,7 +18,6 @@ from typing import BinaryIO, Optional
 from enum import Enum
 
 from nbt_helper.tags import (
-    BaseTag,
     BinaryHandler,
     ByteOrder,
     TagCompound,
@@ -43,16 +42,16 @@ class FileTypes(Enum):
 class DataHandler(ABC):
     @staticmethod
     @abstractmethod
-    def load(buffer: BinaryIO, *args, **kwargs) -> TagCompound: ...
+    def read(buffer: BinaryIO, *args, **kwargs) -> TagCompound: ...
 
     @staticmethod
     @abstractmethod
-    def save(data: TagCompound, buffer: BinaryIO, *args, **kwargs) -> None: ...
+    def write(data: TagCompound, buffer: BinaryIO, *args, **kwargs) -> None: ...
 
 
 class Uncompressed(DataHandler):
     @staticmethod
-    def load(buffer: BinaryIO, byte_order: ByteOrder) -> TagCompound:
+    def read(buffer: BinaryIO, byte_order: ByteOrder) -> TagCompound:
         binary_handler = BinaryHandler(byte_order)
         tag_id = binary_handler.read_byte(buffer)
         if tag_id != TAG_COMPOUND:
@@ -61,79 +60,79 @@ class Uncompressed(DataHandler):
         return TagCompound(binary_handler, buffer=buffer, name=name)
 
     @staticmethod
-    def save(data: BaseTag, buffer: BinaryIO, byte_order: ByteOrder) -> None:
+    def write(data: TagCompound, buffer: BinaryIO, byte_order: ByteOrder) -> None:
         binary_handler = BinaryHandler(byte_order)
-        TagCompound(binary_handler, value=[TagCompound(binary_handler, value=[data])]).write_to_buffer(buffer)
+        TagCompound(binary_handler, value=[data]).write_to_buffer(buffer)
 
 
 class JE_Uncompressed(DataHandler):
     @staticmethod
-    def load(buffer: BinaryIO) -> TagCompound:
-        return Uncompressed.load(buffer, ByteOrder.BIG)
+    def read(buffer: BinaryIO) -> TagCompound:
+        return Uncompressed.read(buffer, ByteOrder.BIG)
 
     @staticmethod
-    def save(data: BaseTag, buffer: BinaryIO) -> None:
+    def write(data: TagCompound, buffer: BinaryIO) -> None:
         if data.binary_handler.get_byte_order() is ByteOrder.LITTLE:
             data.binary_handler.change_byte_order(ByteOrder.BIG)
-        Uncompressed.save(data, buffer, ByteOrder.BIG)
+        Uncompressed.write(data, buffer, ByteOrder.BIG)
 
 
 class BE_Uncompressed(DataHandler):
     @staticmethod
-    def load(buffer: BinaryIO) -> TagCompound:
-        return Uncompressed.load(buffer, ByteOrder.LITTLE)
+    def read(buffer: BinaryIO) -> TagCompound:
+        return Uncompressed.read(buffer, ByteOrder.LITTLE)
 
     @staticmethod
-    def save(data: BaseTag, buffer: BinaryIO) -> None:
+    def write(data: TagCompound, buffer: BinaryIO) -> None:
         if data.binary_handler.get_byte_order() is ByteOrder.BIG:
             data.binary_handler.change_byte_order(ByteOrder.LITTLE)
-        Uncompressed.save(data, buffer, ByteOrder.LITTLE)
+        Uncompressed.write(data, buffer, ByteOrder.LITTLE)
 
 
 class JE_ZlibCompressed(DataHandler):
     @staticmethod
-    def load(buffer: BinaryIO) -> TagCompound:
+    def read(buffer: BinaryIO) -> TagCompound:
         buffer = BytesIO(zlib.decompress(buffer.read()))
-        return JE_Uncompressed.load(buffer)
+        return JE_Uncompressed.read(buffer)
 
     @staticmethod
-    def save(data: BaseTag, buffer: BinaryIO) -> None:
+    def write(data: TagCompound, buffer: BinaryIO) -> None:
         temp_buffer = BytesIO()
-        JE_Uncompressed.save(data, temp_buffer)
+        JE_Uncompressed.write(data, temp_buffer)
         buffer.write(zlib.compress(temp_buffer.getvalue()))
 
 
 class JE_GzipCompressed(DataHandler):
     @staticmethod
-    def load(buffer: BinaryIO) -> TagCompound:
+    def read(buffer: BinaryIO) -> TagCompound:
         buffer = BytesIO(gzip.decompress(buffer.read()))
-        return JE_Uncompressed.load(buffer)
+        return JE_Uncompressed.read(buffer)
 
     @staticmethod
-    def save(data: BaseTag, buffer: BinaryIO) -> None:
+    def write(data: TagCompound, buffer: BinaryIO) -> None:
         temp_buffer = BytesIO()
-        JE_Uncompressed.save(data, temp_buffer)
+        JE_Uncompressed.write(data, temp_buffer)
         buffer.write(gzip.compress(temp_buffer.getvalue()))
 
 
 class BE_WithHeader(DataHandler):
     @staticmethod
-    def load(buffer: BinaryIO) -> TagCompound:
+    def read(buffer: BinaryIO) -> TagCompound:
         binary_handler = BinaryHandler(ByteOrder.LITTLE)
         magic_number = binary_handler.read_int(buffer)
         if magic_number != BEDROCK_EDITION_MAGIC_NUMBER:
             raise ValueError("Wrong data handler used! Unknown magic number")
         size = binary_handler.read_int(buffer, signed=False)
         buffer = BytesIO(buffer.read(size))
-        return BE_Uncompressed.load(buffer)
+        return BE_Uncompressed.read(buffer)
 
     @staticmethod
-    def save(data: BaseTag, buffer: BinaryIO) -> None:
+    def write(data: TagCompound, buffer: BinaryIO) -> None:
         binary_handler = BinaryHandler(ByteOrder.LITTLE)
         binary_handler.write_int(buffer, BEDROCK_EDITION_MAGIC_NUMBER)
         temp_buffer = BytesIO()
 
-        BE_Uncompressed.save(data, temp_buffer)
+        BE_Uncompressed.write(data, temp_buffer)
 
         binary_handler.write_int(buffer, temp_buffer.tell(), signed=False)
         buffer.write(temp_buffer.getvalue())
@@ -148,14 +147,14 @@ class NBTFile:
     def load(self, buffer: BinaryIO) -> None:
         self.guess(buffer)
         self._handler = HANDLERS_LIST[self._type]
-        self.data = self._handler.load(buffer=buffer)
+        self.data = self._handler.read(buffer=buffer)
 
     def save(self, buffer: BinaryIO, type: Optional[FileTypes] = None) -> None:
         if type is not None:
             self._type = type
             self._handler = HANDLERS_LIST[self._type]
 
-        self._handler.save(buffer=buffer, data=self.data)
+        self._handler.write(buffer=buffer, data=self.data)
 
     def guess(self, buffer: BinaryIO) -> bool:
         start_pos = buffer.tell()

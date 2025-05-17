@@ -18,9 +18,8 @@ from nbt_helper.tags import (
 
 
 def get_bytes(tag_cls: Type[BaseTag], byte_roder: ByteOrder, value) -> bytes:
-    tag = tag_cls(BinaryHandler(byte_roder), value=value)
     buffer = BytesIO()
-    tag.write_to_buffer(buffer)
+    tag_cls(BinaryHandler(byte_roder), value=value).write_to_buffer(buffer)
     return buffer.getvalue()
 
 

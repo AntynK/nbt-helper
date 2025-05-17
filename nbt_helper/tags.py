@@ -14,8 +14,6 @@ __all__ = [
     "TagIntArray",
     "TagLongArray",
     "TagByteArray",
-    "read_nbt_file",
-    "write_nbt_file",
 ]
 
 
@@ -309,6 +307,7 @@ class TagList(BaseTag):
 
         if value:
             self.value.extend(value)
+            self.tag_id = value[0].TAG_ID
 
     def load_from_buffer(self, buffer: BinaryIO) -> None:
         self.tag_id = self.binary_handler.read_byte(buffer)
@@ -319,6 +318,8 @@ class TagList(BaseTag):
         ]
 
     def write_to_buffer(self, buffer: BinaryIO) -> None:
+        if self.tag_id == TAG_END and self.value:
+            self.tag_id = self.value[0].TAG_ID
         self.binary_handler.write_byte(buffer, self.tag_id)
         self.binary_handler.write_int(buffer, len(self.value))
 
@@ -509,20 +510,6 @@ class TagByteArray(BaseTag):
         lenght = len(self.value)
         self.binary_handler.write_int(buffer, lenght)
         buffer.write(self.value)
-
-
-def read_nbt_file(file: BinaryIO) -> TagCompound:
-    binary_handler = BinaryHandler(ByteOrder.BIG)
-    tag_id = binary_handler.read_byte(file)
-    if tag_id != TAG_COMPOUND:
-        raise ValueError("File data must starts with Compound tag.")
-    name = TagString(binary_handler, buffer=file).value
-    return TagCompound(binary_handler, buffer=file, name=name)
-
-
-def write_nbt_file(data: TagCompound, buffer: BinaryIO) -> None:
-    binary_handler = BinaryHandler(ByteOrder.BIG)
-    TagCompound(binary_handler, value=[data]).write_to_buffer(buffer)
 
 
 TAGS_LIST = {
