@@ -40,7 +40,7 @@ def get_bytes(tag_cls: Type[BaseTag], byte_roder: ByteOrder, value) -> bytes:
         (TagDouble, -3.1456122398376465, b"\xc0\t*6\xc0\x00\x00\x00"),
     ],
 )
-def test_number_tags(
+def test_io(
     tag_cls: Type[BaseTag],
     value: Union[int, float],
     expected_value: bytes,
@@ -62,7 +62,31 @@ def test_number_tags(
     assert little_endian_tag.value == value
 
 
-def test_string_tag():
+@pytest.mark.parametrize(
+    ["inital_tag", "other_number_tag"],
+    [
+        (TagByte, TagLong),
+        (TagShort, TagByte),
+        (TagInt, TagShort),
+        (TagLong, TagInt),
+        (TagFloat, TagDouble),
+        (TagDouble, TagFloat),
+    ],
+)
+def test_number_tags_operation(
+    inital_tag: Type[BaseTag], other_number_tag: Type[BaseTag]
+) -> None:
+    value = 100
+    handler = BinaryHandler(ByteOrder.BIG)
+    tag = inital_tag(handler, value=value)
+    assert tag == value
+    assert tag == float(value)
+    assert tag == inital_tag(handler, value=value)
+    assert tag != other_number_tag(handler, value=value)
+    assert tag != str(value)
+
+
+def test_string_tag() -> None:
     value = "Hello 🌍!"
     big_endian_bytes = get_bytes(TagString, ByteOrder.BIG, value)
     little_endian_bytes = get_bytes(TagString, ByteOrder.LITTLE, value)

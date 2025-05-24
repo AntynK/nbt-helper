@@ -105,11 +105,11 @@ class Chunk:
         self._binary_handler.write_int(buffer, self.timestamp, signed=False)
         return occupied_sectors
 
-    def _seek_to_location_table(self, buffer: BinaryIO):
+    def _seek_to_location_table(self, buffer: BinaryIO) -> None:
         index = location_from_cords(self.x, self.z)
         buffer.seek(index * INT_SIZE)
 
-    def _seek_to_timestamp_table(self, buffer: BinaryIO):
+    def _seek_to_timestamp_table(self, buffer: BinaryIO) -> None:
         index = location_from_cords(self.x, self.z)
         buffer.seek(index * INT_SIZE + SECTOR_SIZE)
 

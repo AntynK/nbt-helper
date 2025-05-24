@@ -2,6 +2,8 @@ __all__ = [
     "ByteOrder",
     "BinaryHandler",
     "BaseTag",
+    "BaseNumTag",
+    "BaseFloatTag",
     "TagByte",
     "TagShort",
     "TagInt",
@@ -48,7 +50,7 @@ class BinaryHandler:
     def __init__(self, byte_order: ByteOrder = ByteOrder.BIG) -> None:
         self.change_byte_order(byte_order)
 
-    def change_byte_order(self, new_order: ByteOrder):
+    def change_byte_order(self, new_order: ByteOrder) -> None:
         self._order = new_order.value
         self._byte = struct.Struct(f"{self._order}b")
         self._short = struct.Struct(f"{self._order}h")
@@ -129,6 +131,8 @@ class BinaryHandler:
 
 
 class BaseTag(ABC):
+    TAG_ID = TAG_END
+
     def __init__(
         self,
         binary_handler: BinaryHandler,
@@ -151,10 +155,19 @@ class BaseTag(ABC):
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.name!r}): {self.value}"
 
+    def __eq__(self, other) -> bool:
+        if issubclass(type(other), BaseTag):
+            return all(
+                (
+                    self.TAG_ID == other.TAG_ID,
+                    other.name == self.name,
+                    other.value == self.value,
+                )
+            )
+        return False
 
-class TagByte(BaseTag):
-    TAG_ID = TAG_BYTE
 
+class BaseNumTag(BaseTag):
     def __init__(
         self,
         binary_handler: BinaryHandler,
@@ -163,6 +176,15 @@ class TagByte(BaseTag):
         buffer: Optional[BinaryIO] = None,
     ) -> None:
         super().__init__(binary_handler, name, value, buffer)
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, (int, float)):
+            return self.value == other
+        return super().__eq__(other)
+
+
+class TagByte(BaseNumTag):
+    TAG_ID = TAG_BYTE
 
     def load_from_buffer(self, buffer: BinaryIO) -> None:
         self.value = self.binary_handler.read_byte(buffer)
@@ -171,17 +193,8 @@ class TagByte(BaseTag):
         self.binary_handler.write_byte(buffer, self.value)
 
 
-class TagShort(BaseTag):
+class TagShort(BaseNumTag):
     TAG_ID = TAG_SHORT
-
-    def __init__(
-        self,
-        binary_handler: BinaryHandler,
-        name: str = "",
-        value: int = 0,
-        buffer: Optional[BinaryIO] = None,
-    ) -> None:
-        super().__init__(binary_handler, name, value, buffer)
 
     def load_from_buffer(self, buffer: BinaryIO) -> None:
         self.value = self.binary_handler.read_short(buffer)
@@ -190,17 +203,8 @@ class TagShort(BaseTag):
         self.binary_handler.write_short(buffer, self.value)
 
 
-class TagInt(BaseTag):
+class TagInt(BaseNumTag):
     TAG_ID = TAG_INT
-
-    def __init__(
-        self,
-        binary_handler: BinaryHandler,
-        name: str = "",
-        value: int = 0,
-        buffer: Optional[BinaryIO] = None,
-    ) -> None:
-        super().__init__(binary_handler, name, value, buffer)
 
     def load_from_buffer(self, buffer: BinaryIO) -> None:
         self.value = self.binary_handler.read_int(buffer)
@@ -209,17 +213,8 @@ class TagInt(BaseTag):
         self.binary_handler.write_int(buffer, self.value)
 
 
-class TagLong(BaseTag):
+class TagLong(BaseNumTag):
     TAG_ID = TAG_LONG
-
-    def __init__(
-        self,
-        binary_handler: BinaryHandler,
-        name: str = "",
-        value: int = 0,
-        buffer: Optional[BinaryIO] = None,
-    ) -> None:
-        super().__init__(binary_handler, name, value, buffer)
 
     def load_from_buffer(self, buffer: BinaryIO) -> None:
         self.value = self.binary_handler.read_long(buffer)
@@ -228,9 +223,7 @@ class TagLong(BaseTag):
         self.binary_handler.write_long(buffer, self.value)
 
 
-class TagFloat(BaseTag):
-    TAG_ID = TAG_FLOAT
-
+class BaseFloatTag(BaseTag):
     def __init__(
         self,
         binary_handler: BinaryHandler,
@@ -239,6 +232,15 @@ class TagFloat(BaseTag):
         buffer: Optional[BinaryIO] = None,
     ) -> None:
         super().__init__(binary_handler, name, value, buffer)
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, (int, float)):
+            return self.value == other
+        return super().__eq__(other)
+
+
+class TagFloat(BaseFloatTag):
+    TAG_ID = TAG_FLOAT
 
     def load_from_buffer(self, buffer: BinaryIO) -> None:
         self.value = self.binary_handler.read_float(buffer)
@@ -247,17 +249,8 @@ class TagFloat(BaseTag):
         self.binary_handler.write_float(buffer, self.value)
 
 
-class TagDouble(BaseTag):
+class TagDouble(BaseFloatTag):
     TAG_ID = TAG_DOUBLE
-
-    def __init__(
-        self,
-        binary_handler: BinaryHandler,
-        name: str = "",
-        value: float = 0,
-        buffer: Optional[BinaryIO] = None,
-    ) -> None:
-        super().__init__(binary_handler, name, value, buffer)
 
     def load_from_buffer(self, buffer: BinaryIO) -> None:
         self.value = self.binary_handler.read_double(buffer)
@@ -326,6 +319,9 @@ class TagList(BaseTag):
         for tag in self.value:
             tag.write_to_buffer(buffer)
 
+    def append(self, item: BaseTag) -> None:
+        self.value.append(item)
+
     def __repr__(self) -> str:
         return f"TagList('{self.name}') [{len(self.value)}]"
 
@@ -338,7 +334,7 @@ class TagList(BaseTag):
 
         return self.value[index]
 
-    def __setitem__(self, index: int, item: Any):
+    def __setitem__(self, index: int, item: Any) -> None:
         if not isinstance(index, int):
             raise ValueError("Index must be a string.")
         if not issubclass(type(item), BaseTag):
@@ -347,6 +343,17 @@ class TagList(BaseTag):
 
     def __len__(self) -> int:
         return len(self.value)
+
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, TagList):
+            return False
+        return all(
+            (
+                self.tag_id == other.tag_id,
+                self.name == other.name,
+                self.value == other.value,
+            )
+        )
 
 
 class TagCompound(BaseTag):
@@ -408,6 +415,9 @@ class TagCompound(BaseTag):
 
         return result
 
+    def append(self, item: BaseTag) -> None:
+        self.value.append(item)
+
     def __delitem__(self, key: str) -> None:
         if not isinstance(key, str):
             raise ValueError("Key must be a string.")
@@ -425,7 +435,7 @@ class TagCompound(BaseTag):
                 return tag
         raise KeyError(f"'{key}' does not exist.")
 
-    def __setitem__(self, key: str, item: Any):
+    def __setitem__(self, key: str, item: Any) -> None:
         if not isinstance(key, str):
             raise ValueError("Key must be a string.")
         if not issubclass(type(item), BaseTag):
@@ -460,10 +470,13 @@ class TagIntArray(BaseTag):
         length = self.binary_handler.read_int(buffer)
         self.value = list(self.binary_handler.read_int_array(buffer, length))
 
-    def write_to_buffer(self, buffer: BinaryIO):
+    def write_to_buffer(self, buffer: BinaryIO) -> None:
         lenght = len(self.value)
         self.binary_handler.write_int(buffer, lenght)
         self.binary_handler.write_int_array(buffer, self.value)
+
+    def __iter__(self):
+        yield from self.value
 
 
 class TagLongArray(BaseTag):
@@ -484,10 +497,13 @@ class TagLongArray(BaseTag):
         length = self.binary_handler.read_int(buffer)
         self.value = list(self.binary_handler.read_long_array(buffer, length))
 
-    def write_to_buffer(self, buffer: BinaryIO):
+    def write_to_buffer(self, buffer: BinaryIO) -> None:
         lenght = len(self.value)
         self.binary_handler.write_int(buffer, lenght)
         self.binary_handler.write_long_array(buffer, self.value)
+
+    def __iter__(self):
+        yield from self.value
 
 
 class TagByteArray(BaseTag):
@@ -506,10 +522,13 @@ class TagByteArray(BaseTag):
         length = self.binary_handler.read_int(buffer)
         self.value = bytearray(buffer.read(length))
 
-    def write_to_buffer(self, buffer: BinaryIO):
+    def write_to_buffer(self, buffer: BinaryIO) -> None:
         lenght = len(self.value)
         self.binary_handler.write_int(buffer, lenght)
         buffer.write(self.value)
+
+    def __iter__(self):
+        yield from self.value
 
 
 TAGS_LIST = {
