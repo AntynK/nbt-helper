@@ -152,6 +152,12 @@ class BaseTag(ABC):
     @abstractmethod
     def write_to_buffer(self, buffer: BinaryIO) -> None: ...
 
+    def get_byte_order(self) -> ByteOrder:
+        return self.binary_handler.get_byte_order()
+
+    def change_byte_order(self, new_byte_order: ByteOrder) -> None:
+        self.binary_handler.change_byte_order(new_byte_order)
+
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.name!r}): {self.value}"
 

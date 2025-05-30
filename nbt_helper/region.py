@@ -1,16 +1,9 @@
-__all__ = [
-    "SECTOR_SIZE",
-    "Region",
-    "Chunk",
-    "CompressionTypes",
-    "cords_from_filepath",
-    "cords_from_location",
-    "location_from_cords",
-]
+__all__ = ["SECTOR_SIZE", "Region", "Chunk", "CompressionTypes"]
 
 import os
 import gzip
 import zlib
+import re
 from enum import Enum
 from io import BytesIO
 from typing import Optional, BinaryIO
@@ -24,6 +17,7 @@ from nbt_helper.tags import (
 
 SECTOR_SIZE = 4096
 INT_SIZE = 4
+MCA_FILE_PATTERN = re.compile(r"r\.-?\d+\.-?\d+\.mca")
 
 
 class CompressionTypes(Enum):
@@ -32,20 +26,14 @@ class CompressionTypes(Enum):
     ZLIB_COMPRESSED = 2
 
 
-def cords_from_filepath(filepath: str) -> tuple[int, int]:
-    filepath = os.path.basename(filepath)
-    filepath = filepath.replace("r.", "").replace(".mca", "")
-    x, z = map(int, filepath.split("."))
-    return x, z
-
-
 def cords_from_location(location: int) -> tuple[int, int]:
-    z, x = divmod(location, 32)
+    z = location >> 5
+    x = location & 31
     return x, z
 
 
 def location_from_cords(x: int, z: int) -> int:
-    return x + z * 32
+    return x + (z << 5)
 
 
 class Chunk:
@@ -165,6 +153,11 @@ class Chunk:
     def is_empty(self) -> bool:
         return not self.data.value
 
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, Chunk):
+            return False
+        return all((self.data == other.data, self.x == other.x, self.z == other.z))
+
 
 class Region:
     def __init__(self, x: int = 0, z: int = 0, filepath: Optional[str] = None) -> None:
@@ -175,20 +168,28 @@ class Region:
             self.load_region_file(filepath)
 
     def load_region_file(self, filepath: str) -> None:
-        if not filepath.endswith(".mca"):
-            raise ValueError("Wrong file type")
+        if not MCA_FILE_PATTERN.match(os.path.basename(filepath)):
+            raise ValueError(
+                f"Wrong file type or incorrect name. Filepath = {filepath}"
+            )
 
         file_size = os.path.getsize(filepath)
         if file_size < SECTOR_SIZE * 2:
             raise ValueError(f"File '{filepath}' is too small.")
 
-        self.x, self.z = cords_from_filepath(filepath)
+        self.x, self.z = self.cords_from_filepath(filepath)
 
         with open(filepath, "rb") as file:
             for index in range(SECTOR_SIZE // INT_SIZE):
                 chunk = Chunk()
                 chunk.read_chunk(index, file)
                 self.chunks.append(chunk)
+
+    def cords_from_filepath(self, filepath: str) -> tuple[int, int]:
+        filepath = os.path.basename(filepath)
+        filepath = filepath.replace("r.", "").replace(".mca", "")
+        x, z = map(int, filepath.split("."))
+        return x, z
 
     def write_region_file(self, output_folder: str) -> None:
         filepath = os.path.join(output_folder, f"r.{self.x}.{self.z}.mca")

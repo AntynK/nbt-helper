@@ -12,9 +12,10 @@ __all__ = [
 import struct
 import zlib
 import gzip
+from pathlib import Path
 from io import BytesIO
 from abc import ABC, abstractmethod
-from typing import BinaryIO, Optional
+from typing import BinaryIO, Optional, Union
 from enum import Enum
 
 from nbt_helper.tags import (
@@ -29,6 +30,8 @@ BEDROCK_EDITION_MAGIC_NUMBER = 8
 GZIP_MAGIC_NUMBER = b"\x1f\x8b\x08"
 ZLIB_MAGIC_NUMBER = 120
 PLAIN_NBT_MAGIC_NUMBER = b"\n\x00\x00"
+
+StrOrPath = Union[str, Path]
 
 
 class FileTypes(Enum):
@@ -72,8 +75,8 @@ class JE_Uncompressed(DataHandler):
 
     @staticmethod
     def write(data: TagCompound, buffer: BinaryIO) -> None:
-        if data.binary_handler.get_byte_order() is ByteOrder.LITTLE:
-            data.binary_handler.change_byte_order(ByteOrder.BIG)
+        if data.get_byte_order() is ByteOrder.LITTLE:
+            data.change_byte_order(ByteOrder.BIG)
         Uncompressed.write(data, buffer, ByteOrder.BIG)
 
 
@@ -84,8 +87,8 @@ class BE_Uncompressed(DataHandler):
 
     @staticmethod
     def write(data: TagCompound, buffer: BinaryIO) -> None:
-        if data.binary_handler.get_byte_order() is ByteOrder.BIG:
-            data.binary_handler.change_byte_order(ByteOrder.LITTLE)
+        if data.get_byte_order() is ByteOrder.BIG:
+            data.change_byte_order(ByteOrder.LITTLE)
         Uncompressed.write(data, buffer, ByteOrder.LITTLE)
 
 
@@ -139,13 +142,22 @@ class BE_WithHeader(DataHandler):
 
 
 class NBTFile:
-    def __init__(self, type: FileTypes = FileTypes.JE_GZIP_COMPRESSED) -> None:
+    def __init__(
+        self,
+        filepath: Optional[StrOrPath] = None,
+        type: FileTypes = FileTypes.JE_GZIP_COMPRESSED,
+    ) -> None:
         super().__init__()
         self._type = type
+        self._handler = HANDLERS_LIST[self._type]
         self.data = TagCompound(BinaryHandler())
+        if filepath:
+            with open(filepath, "rb") as file:
+                self.load(file)
 
     def load(self, buffer: BinaryIO) -> None:
-        self.guess(buffer)
+        if not self.guess(buffer):
+            raise ValueError("Unknown file format.")
         self._handler = HANDLERS_LIST[self._type]
         self.data = self._handler.read(buffer=buffer)
 
@@ -160,8 +172,6 @@ class NBTFile:
         start_pos = buffer.tell()
         magic_number = buffer.read(6)
         buffer.seek(start_pos)
-
-        self._type = FileTypes.JE_GZIP_COMPRESSED
 
         if magic_number[:3] == GZIP_MAGIC_NUMBER:
             self._type = FileTypes.JE_GZIP_COMPRESSED

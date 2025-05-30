@@ -29,7 +29,6 @@ Homepage = "https://github.com/AntynK/nbt-helper"
 Documentation = "https://github.com/AntynK/nbt-helper/blob/master/docs"
 Repository = "https://github.com/AntynK/nbt-helper.git"
 Issues = "https://github.com/AntynK/nbt-helper/issues"
-Changelog = "https://github.com/AntynK/nbt-helper/blob/master/CHANGELOG.md"
 
 [project.optional-dependencies]
 test = ["pytest>=7.0"]
