@@ -312,7 +312,7 @@ class TagList(BaseTag):
         self.tag_id = self.binary_handler.read_byte(buffer)
         length = self.binary_handler.read_int(buffer)
         self.value = [
-            TAGS_LIST[self.tag_id](self.binary_handler, buffer=buffer)
+            TAGS[self.tag_id](self.binary_handler, buffer=buffer)
             for _ in range(length)
         ]
 
@@ -382,7 +382,7 @@ class TagCompound(BaseTag):
             if tag_type == TAG_END:
                 break
             name = TagString(self.binary_handler, buffer=buffer).value
-            tag = TAGS_LIST[tag_type](self.binary_handler, name=name, buffer=buffer)
+            tag = TAGS[tag_type](self.binary_handler, name=name, buffer=buffer)
             self.value.append(tag)
 
     def write_to_buffer(self, buffer: BinaryIO) -> None:
@@ -537,7 +537,7 @@ class TagByteArray(BaseTag):
         yield from self.value
 
 
-TAGS_LIST = {
+TAGS = {
     TAG_BYTE: TagByte,
     TAG_SHORT: TagShort,
     TAG_INT: TagInt,

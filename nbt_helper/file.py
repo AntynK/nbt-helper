@@ -63,9 +63,9 @@ class Uncompressed(DataHandler):
         return TagCompound(binary_handler, buffer=buffer, name=name)
 
     @staticmethod
-    def write(data: TagCompound, buffer: BinaryIO, byte_order: ByteOrder) -> None:
-        binary_handler = BinaryHandler(byte_order)
-        TagCompound(binary_handler, value=[data]).write_to_buffer(buffer)
+    def write(data: TagCompound, buffer: BinaryIO) -> None:
+        buffer.write(PLAIN_NBT_MAGIC_NUMBER)
+        data.write_to_buffer(buffer)
 
 
 class JE_Uncompressed(DataHandler):
@@ -77,7 +77,7 @@ class JE_Uncompressed(DataHandler):
     def write(data: TagCompound, buffer: BinaryIO) -> None:
         if data.get_byte_order() is ByteOrder.LITTLE:
             data.change_byte_order(ByteOrder.BIG)
-        Uncompressed.write(data, buffer, ByteOrder.BIG)
+        Uncompressed.write(data, buffer)
 
 
 class BE_Uncompressed(DataHandler):
@@ -89,7 +89,7 @@ class BE_Uncompressed(DataHandler):
     def write(data: TagCompound, buffer: BinaryIO) -> None:
         if data.get_byte_order() is ByteOrder.BIG:
             data.change_byte_order(ByteOrder.LITTLE)
-        Uncompressed.write(data, buffer, ByteOrder.LITTLE)
+        Uncompressed.write(data, buffer)
 
 
 class JE_ZlibCompressed(DataHandler):
@@ -149,22 +149,25 @@ class NBTFile:
     ) -> None:
         super().__init__()
         self._type = type
-        self._handler = HANDLERS_LIST[self._type]
+        self._handler = HANDLERS[self._type]
         self.data = TagCompound(BinaryHandler())
         if filepath:
             with open(filepath, "rb") as file:
                 self.load(file)
 
+    def get_file_type(self) -> FileTypes:
+        return self._type
+
     def load(self, buffer: BinaryIO) -> None:
         if not self.guess(buffer):
             raise ValueError("Unknown file format.")
-        self._handler = HANDLERS_LIST[self._type]
+        self._handler = HANDLERS[self._type]
         self.data = self._handler.read(buffer=buffer)
 
     def save(self, buffer: BinaryIO, type: Optional[FileTypes] = None) -> None:
         if type is not None:
             self._type = type
-            self._handler = HANDLERS_LIST[self._type]
+            self._handler = HANDLERS[self._type]
 
         self._handler.write(buffer=buffer, data=self.data)
 
@@ -190,7 +193,7 @@ class NBTFile:
         return False
 
 
-HANDLERS_LIST = {
+HANDLERS = {
     FileTypes.JE_UNCOMPRESSED: JE_Uncompressed,
     FileTypes.BE_UNCOMPRESSED: BE_Uncompressed,
     FileTypes.BE_WITH_HEADER: BE_WithHeader,

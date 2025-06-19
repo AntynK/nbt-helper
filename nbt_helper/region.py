@@ -6,7 +6,8 @@ import zlib
 import re
 from enum import Enum
 from io import BytesIO
-from typing import Optional, BinaryIO
+from typing import Optional, Union, BinaryIO
+from pathlib import Path
 
 from nbt_helper.file import JE_Uncompressed
 from nbt_helper.tags import (
@@ -18,6 +19,8 @@ from nbt_helper.tags import (
 SECTOR_SIZE = 4096
 INT_SIZE = 4
 MCA_FILE_PATTERN = re.compile(r"r\.-?\d+\.-?\d+\.mca")
+
+StrOrPath = Union[str, Path]
 
 
 class CompressionTypes(Enum):
@@ -79,8 +82,7 @@ class Chunk:
     def write_chunk(self, buffer: BinaryIO, offset: int) -> int:
         chunk_data_pos = offset * SECTOR_SIZE
         buffer.seek(chunk_data_pos)
-        self._write_body(buffer)
-        length = buffer.tell() - chunk_data_pos
+        length = self._write_body(buffer)
         occupied_sectors = length // SECTOR_SIZE + 1
         self._add_padding(buffer, length, occupied_sectors)
 
@@ -108,14 +110,14 @@ class Chunk:
         buffer.seek(padding, os.SEEK_CUR)
         buffer.write(b"\x00")
 
-    def _write_body(self, buffer: BinaryIO) -> None:
+    def _write_body(self, buffer: BinaryIO) -> int:
         temp_buffer = BytesIO()
         JE_Uncompressed.write(self.data, temp_buffer)
         chunk_data = self._compress_chunk(temp_buffer.getvalue())
 
         self._binary_handler.write_int(buffer, len(chunk_data), signed=False)
         self._binary_handler.write_byte(buffer, self.compression, signed=False)
-        buffer.write(chunk_data)
+        return buffer.write(chunk_data)
 
     def _decompress_chunk(self, chunk_data: bytes) -> BytesIO:
         try:
@@ -160,14 +162,16 @@ class Chunk:
 
 
 class Region:
-    def __init__(self, x: int = 0, z: int = 0, filepath: Optional[str] = None) -> None:
+    def __init__(
+        self, x: int = 0, z: int = 0, filepath: Optional[StrOrPath] = None
+    ) -> None:
         self._binary_handler = BinaryHandler(ByteOrder.BIG)
         self.chunks: list[Chunk] = []
         self.x, self.z = x, z
         if filepath:
             self.load_region_file(filepath)
 
-    def load_region_file(self, filepath: str) -> None:
+    def load_region_file(self, filepath: StrOrPath) -> None:
         if not MCA_FILE_PATTERN.match(os.path.basename(filepath)):
             raise ValueError(
                 f"Wrong file type or incorrect name. Filepath = {filepath}"
@@ -185,17 +189,17 @@ class Region:
                 chunk.read_chunk(index, file)
                 self.chunks.append(chunk)
 
-    def cords_from_filepath(self, filepath: str) -> tuple[int, int]:
+    def cords_from_filepath(self, filepath: StrOrPath) -> tuple[int, int]:
         filepath = os.path.basename(filepath)
         filepath = filepath.replace("r.", "").replace(".mca", "")
         x, z = map(int, filepath.split("."))
         return x, z
 
-    def write_region_file(self, output_folder: str) -> None:
+    def write_region_file(self, output_folder: StrOrPath) -> None:
         filepath = os.path.join(output_folder, f"r.{self.x}.{self.z}.mca")
         with open(filepath, "wb") as file:
             self._init_tables(file)
-            offset = 100
+            offset = 2
             for chunk in self.chunks:
                 if chunk.is_empty():
                     continue
