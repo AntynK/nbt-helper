@@ -30,12 +30,16 @@ class CompressionTypes(Enum):
 
 
 def cords_from_location(location: int) -> tuple[int, int]:
+    """Converts chunk location in region location table to x and z coordinates."""
+
     z = location >> 5
     x = location & 31
     return x, z
 
 
 def location_from_cords(x: int, z: int) -> int:
+    """Converts x and z coordinates to position in region location table."""
+
     return x + (z << 5)
 
 
@@ -80,6 +84,15 @@ class Chunk:
         self.data = JE_Uncompressed.read(chunk_data)
 
     def write_chunk(self, buffer: BinaryIO, offset: int) -> int:
+        """Writes chunk to the buffer.
+
+        Args:
+            offset (int): reletive offset of chunk data in sectors.
+
+        Returns:
+            int: number of occupied sectors.
+        """
+
         chunk_data_pos = offset * SECTOR_SIZE
         buffer.seek(chunk_data_pos)
         length = self._write_body(buffer)
@@ -172,6 +185,13 @@ class Region:
             self.load_region_file(filepath)
 
     def load_region_file(self, filepath: StrOrPath) -> None:
+        """Loads region file.
+
+        Raises:
+            ValueError: if the file name does not match pattern "x.z.mca".
+            ValueError: if the file size is less than 8192.
+        """
+
         if not MCA_FILE_PATTERN.match(os.path.basename(filepath)):
             raise ValueError(
                 f"Wrong file type or incorrect name. Filepath = {filepath}"
@@ -190,12 +210,16 @@ class Region:
                 self.chunks.append(chunk)
 
     def cords_from_filepath(self, filepath: StrOrPath) -> tuple[int, int]:
+        """Gets x and z coordinates from the region file name."""
+
         filepath = os.path.basename(filepath)
         filepath = filepath.replace("r.", "").replace(".mca", "")
         x, z = map(int, filepath.split("."))
         return x, z
 
     def write_region_file(self, output_folder: StrOrPath) -> None:
+        """Saves region data to file. The file name is generated automatically based on the x and z positions of the region file, so only the directory must be specified."""
+
         filepath = os.path.join(output_folder, f"r.{self.x}.{self.z}.mca")
         with open(filepath, "wb") as file:
             self._init_tables(file)
@@ -206,6 +230,8 @@ class Region:
                 offset += chunk.write_chunk(file, offset)
 
     def _init_tables(self, buffer: BinaryIO) -> None:
+        """Initializes first 2 table (the location table and the timestamos table) with zeros."""
+
         buffer.seek(SECTOR_SIZE * 2 - 1)
         buffer.write(b"\x00")
 

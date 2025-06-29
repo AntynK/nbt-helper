@@ -43,6 +43,8 @@ class FileTypes(Enum):
 
 
 class DataHandler(ABC):
+    """This class describes interface of DataHandlers that are used for reading and writing NBT files."""
+
     @staticmethod
     @abstractmethod
     def read(buffer: BinaryIO, *args, **kwargs) -> TagCompound: ...
@@ -142,36 +144,75 @@ class BE_WithHeader(DataHandler):
 
 
 class NBTFile:
+    """This class is used for high-level reading and writing of NBT files.
+    The file type is automatically guessed based on the header.
+    """
+
     def __init__(
         self,
         filepath: Optional[StrOrPath] = None,
+        buffer: Optional[BinaryIO] = None,
         type: FileTypes = FileTypes.JE_GZIP_COMPRESSED,
     ) -> None:
         super().__init__()
         self._type = type
         self._handler = HANDLERS[self._type]
         self.data = TagCompound(BinaryHandler())
+
         if filepath:
             with open(filepath, "rb") as file:
                 self.load(file)
+        elif buffer:
+            self.load(buffer)
 
     def get_file_type(self) -> FileTypes:
         return self._type
 
     def load(self, buffer: BinaryIO) -> None:
+        """Loads data from the buffer
+
+        Raises:
+            ValueError: if the file type cannot be guessed.
+        """
+
         if not self.guess(buffer):
             raise ValueError("Unknown file format.")
         self._handler = HANDLERS[self._type]
         self.data = self._handler.read(buffer=buffer)
 
-    def save(self, buffer: BinaryIO, type: Optional[FileTypes] = None) -> None:
-        if type is not None:
+    def save(
+        self,
+        filepath: Optional[StrOrPath] = None,
+        buffer: Optional[BinaryIO] = None,
+        type: Optional[FileTypes] = None,
+    ) -> None:
+        """Save file data to buffer or file.
+
+        Args:
+            filepath (Optional[StrOrPath], optional): if specified, the data is written to the file. Defaults to None.
+            buffer (Optional[BinaryIO], optional): if specified, the data is written to the buffer. Defaults to None.
+            type (Optional[FileTypes], optional): if specified, changes file type. Defaults to None.
+        """
+
+        if type:
             self._type = type
             self._handler = HANDLERS[self._type]
-
-        self._handler.write(buffer=buffer, data=self.data)
+        if buffer:
+            self._handler.write(buffer=buffer, data=self.data)
+        if filepath:
+            with open(filepath, "wb") as file:
+                self._handler.write(buffer=file, data=self.data)
 
     def guess(self, buffer: BinaryIO) -> bool:
+        """Guess NBT file type based on header (first 6 bytes). Does not chnage stream position.
+
+        Args:
+            buffer (BinaryIO): file buffer
+
+        Returns:
+            bool: True if file type was guessed, otherwise False.
+        """
+
         start_pos = buffer.tell()
         magic_number = buffer.read(6)
         buffer.seek(start_pos)
@@ -191,6 +232,9 @@ class NBTFile:
             self._type = FileTypes.BE_WITH_HEADER
             return True
         return False
+
+    def __repr__(self) -> str:
+        return f"NBTFile(type={self.get_file_type()}, handler={self._handler}, data={self.data})"
 
 
 HANDLERS = {
