@@ -47,6 +47,8 @@ class ByteOrder(Enum):
 
 
 class BinaryHandler:
+    """This class is used to read/write buffers with specified byte order."""
+
     def __init__(self, byte_order: ByteOrder = ByteOrder.BIG) -> None:
         self.change_byte_order(byte_order)
 
@@ -131,6 +133,10 @@ class BinaryHandler:
 
 
 class BaseTag(ABC):
+    """Base class for all NBT tags. 
+    
+    Children classes have to implement `load_from_buffer` and `write_to_buffer` methods."""
+
     TAG_ID = TAG_END
 
     def __init__(
@@ -312,8 +318,7 @@ class TagList(BaseTag):
         self.tag_id = self.binary_handler.read_byte(buffer)
         length = self.binary_handler.read_int(buffer)
         self.value = [
-            TAGS[self.tag_id](self.binary_handler, buffer=buffer)
-            for _ in range(length)
+            TAGS[self.tag_id](self.binary_handler, buffer=buffer) for _ in range(length)
         ]
 
     def write_to_buffer(self, buffer: BinaryIO) -> None:
